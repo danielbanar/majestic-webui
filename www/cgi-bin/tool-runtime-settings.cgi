@@ -26,6 +26,32 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
                 exit
             fi
             ;;
+        setresolution)
+            valid_resolutions="1920x1080 1280x720 854x480 1440x1080 960x720 640x480"
+            if echo "$valid_resolutions" | grep -qw "$POST_resolution"; then
+                yaml-cli -s .video0.size "$POST_resolution"
+                echo "HTTP/1.1 200 OK"
+                echo "Content-type: text/plain"
+                echo ""
+                echo "$POST_resolution"
+                exit
+            fi
+            ;;
+        restartmjpeg)
+            if killall -1 majestic; then
+                echo "HTTP/1.1 200 OK"
+                echo "Content-type: text/plain"
+                echo ""
+                echo "Service restarted successfully"
+                exit
+            else
+                echo "HTTP/1.1 500 Internal Server Error"
+                echo "Content-type: text/plain"
+                echo ""
+                echo "Failed to restart service"
+                exit
+            fi
+            ;;
     esac
     exit
 fi
@@ -34,7 +60,7 @@ fi
 <%in p/header.cgi %>
 
 <style>
-input[type="range"] {
+input[type="range"], select {
     outline: none;
     border: none;
     box-shadow: none;
@@ -42,6 +68,25 @@ input[type="range"] {
 }
 .control-group {
     margin-bottom: 25px;
+}
+.resolution-select {
+    width: 100%;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+.button_submit {
+    margin-top: 20px;
+    width: 100%;
+    padding: 10px;
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.button_submit:hover {
+    background-color: #c82333;
 }
 </style>
 
@@ -54,7 +99,32 @@ function updateControl(type, value) {
     })
     .then(response => response.text())
     .then(newValue => {
-        document.getElementById(`${type}Value`).textContent = `${newValue}${type === 'fps' ? ' FPS' : ' kbps'}`;
+        const element = document.getElementById(`${type}Value`);
+        if (element) {
+            element.textContent = `${newValue}${type === 'fps' ? ' FPS' : ' kbps'}`;
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function setResolution(value) {
+    fetch(window.location.href, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `action=setresolution&resolution=${value}`
+    })
+    .then(response => response.text())
+    .then(res => {
+        document.getElementById('currentResolution').textContent = res;
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function restartService() {
+    fetch(window.location.href, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'action=restartmjpeg'
     })
     .catch(error => console.error('Error:', error));
 }
@@ -90,6 +160,29 @@ function updateControl(type, value) {
                            oninput="updateControl('bitrate', this.value)">
                     <span class="badge bg-success fs-5" id="bitrateValue">0 kbps</span>
                 </div>
+            </div>
+
+            <!-- Resolution Selector -->
+            <div class="control-group">
+                <label class="form-label">Video Resolution:</label>
+                <select class="resolution-select" onchange="setResolution(this.value)">
+                    <option value="1920x1080">1920x1080 16:9</option>
+                    <option value="1280x720">1280x720 16:9</option>
+                    <option value="854x480">854x480 16:9</option>
+                    <option value="1440x1080">1440x1080 4:3</option>
+                    <option value="960x720">960x720 4:3</option>
+                    <option value="640x480">640x480 4:3</option>
+                </select>
+                <div class="mt-2">
+                    Current: <span class="badge bg-info" id="currentResolution">-</span>
+                </div>
+            </div>
+
+            <!-- Restart Service Button -->
+            <div class="control-group">
+                <button class="button_submit" onclick="restartService()">
+                    Restart Majestic
+                </button>
             </div>
         </div>
     </div>
