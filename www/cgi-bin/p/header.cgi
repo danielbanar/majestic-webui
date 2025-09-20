@@ -38,7 +38,7 @@ Pragma: no-cache
 						<a aria-expanded="false" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" id="dropdownMajestic" role="button">Majestic</a>
 						<ul aria-labelledby="dropdownMajestic" class="dropdown-menu">
 							<li><a class="dropdown-item" href="mj-settings.cgi">Settings</a></li>
-							<li><a class="dropdown-item" href="mh-runtime.cgi">Runtime settings</a></li>
+							<li><a class="dropdown-item" href="mj-runtime.cgi">Runtime settings</a></li>
 							<li><hr class="dropdown-divider"></li>
 							<li><a class="dropdown-item" href="mj-configuration.cgi">Configuration</a></li>
 							<li><a class="dropdown-item" href="mj-endpoints.cgi">Endpoints</a></li>
