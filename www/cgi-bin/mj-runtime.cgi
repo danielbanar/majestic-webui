@@ -4,24 +4,26 @@
 <%
 page_title="Camera runtime settings"
 
-# Function to parse available resolutions from sensor data
+# Function to parse available resolutions and their max FPS from sensor data
 get_available_resolutions() {
     sensor_data=$(cat /proc/mi_modules/mi_sensor/mi_sensor0 2>/dev/null)
     echo "$sensor_data" | awk '/start dump Pad info/,/End dump Pad info/ {
         if (/^[[:space:]]+[0-9]+x[0-9]+@[0-9]+fps/) {
             split($1, res, "@")
-            print res[1]
+            split(res[2], fps, "fps")
+            print res[1] "," fps[1]
         }
     }'
 }
 
-# Function to parse current resolution from sensor data
+# Function to parse current resolution and FPS from sensor data
 get_current_resolution() {
     sensor_data=$(cat /proc/mi_modules/mi_sensor/mi_sensor0 2>/dev/null)
     echo "$sensor_data" | awk '/start dump Pad info/,/End dump Pad info/ {
         if (/^[[:space:]]+Cur/) {
             split($2, res, "@")
-            print res[1]
+            split(res[2], fps, "fps")
+            print res[1] "," fps[1]
         }
     }'
 }
@@ -29,7 +31,7 @@ get_current_resolution() {
 if [ "$REQUEST_METHOD" = "POST" ]; then
     case "$POST_action" in
         setfps)
-            if echo "$POST_fps" | grep -qE '^[0-9]+$' && [ "$POST_fps" -ge 10 ] && [ "$POST_fps" -le 60 ]; then
+            if echo "$POST_fps" | grep -qE '^[0-9]+$' && [ "$POST_fps" -ge 3 ] && [ "$POST_fps" -le 120 ]; then
                 echo "setfps 0 $POST_fps" > /proc/mi_modules/mi_sensor/mi_sensor0
                 echo "HTTP/1.1 200 OK"
                 echo "Content-type: text/plain"
@@ -49,13 +51,23 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
             fi
             ;;
         setresolution)
+            # Parse resolution and max FPS from the posted value
+            IFS=',' read -r resolution max_fps <<EOF
+$POST_resolution
+EOF
             valid_resolutions=$(get_available_resolutions)
-            if echo "$valid_resolutions" | grep -qw "$POST_resolution"; then
-                yaml-cli -s .video0.size "$POST_resolution"
+            if echo "$valid_resolutions" | grep -q "$resolution,"; then
+                # Set the resolution
+                yaml-cli -s .video0.size "$resolution"
+                # Set the max FPS for this resolution
+                yaml-cli -s .video0.fps "$max_fps"
+                # Also update the sensor FPS
+                echo "setfps 0 $max_fps" > /proc/mi_modules/mi_sensor/mi_sensor0
+                
                 echo "HTTP/1.1 200 OK"
                 echo "Content-type: text/plain"
                 echo ""
-                echo "$POST_resolution"
+                echo "$resolution,$max_fps"
                 exit
             fi
             ;;
@@ -79,8 +91,21 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
 fi
 
 # Get current values for page render
-current_resolution=$(get_current_resolution)
+current_resolution_fps=$(get_current_resolution)
 available_resolutions=$(get_available_resolutions)
+
+# Parse current resolution and FPS
+IFS=',' read -r current_resolution current_fps <<EOF
+$current_resolution_fps
+EOF
+
+# If we couldn't get current values, set defaults
+if [ -z "$current_resolution" ]; then
+    current_resolution="1920x1080"
+fi
+if [ -z "$current_fps" ]; then
+    current_fps=30
+fi
 %>
 
 <%in p/header.cgi %>
@@ -120,6 +145,11 @@ input[type="range"], select {
 }
 .badge.updating {
     background-color: #6c757d !important;
+}
+.info-text {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-top: 5px;
 }
 </style>
 
@@ -164,6 +194,9 @@ function setResolution(value) {
     const resolutionElement = document.getElementById('currentResolution');
     resolutionElement.classList.add('updating');
     
+    // Parse the value to get resolution and max FPS
+    const [resolution, maxFps] = value.split(',');
+    
     fetch(window.location.href, {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -171,8 +204,17 @@ function setResolution(value) {
     })
     .then(response => response.text())
     .then(res => {
-        resolutionElement.textContent = res;
+        resolutionElement.textContent = resolution;
         resolutionElement.classList.remove('updating');
+        
+        // Update FPS slider to match the new resolution's max FPS
+        const fpsSlider = document.getElementById('fpsSlider');
+        fpsSlider.max = maxFps;
+        fpsSlider.value = maxFps;
+        document.getElementById('fpsValue').textContent = `${maxFps} FPS`;
+        
+        // Show the new max FPS in the info text
+        document.getElementById('fpsInfo').textContent = `Max FPS for this resolution: ${maxFps}`;
     })
     .catch(error => {
         console.error('Error:', error);
@@ -216,12 +258,15 @@ function restartService() {
                     <input type="range" 
                            class="form-range" 
                            id="fpsSlider"
-                           min="10" 
-                           max="60" 
-                           value="30"
+                           min="3" 
+                           max="<%= $current_fps %>" 
+                           value="<%= $current_fps %>"
                            onchange="updateControl('fps', this.value)"
                            oninput="document.getElementById('fpsValue').textContent = this.value + ' FPS'">
-                    <span class="badge bg-primary fs-5" id="fpsValue">30 FPS</span>
+                    <span class="badge bg-primary fs-5" id="fpsValue"><%= $current_fps %> FPS</span>
+                </div>
+                <div class="info-text" id="fpsInfo">
+                    Max FPS for this resolution: <%= $current_fps %>
                 </div>
             </div>
 
@@ -243,23 +288,26 @@ function restartService() {
 
             <!-- Resolution Selector -->
             <div class="control-group">
-                <label class="form-label">Video Resolution:</label>
+                <label class="form-label">Sensor Mode:</label>
                 <select class="resolution-select" onchange="setResolution(this.value)">
                     <%
                     # Generate options using shell code
                     IFS='
                     '
-                    for res in $available_resolutions; do
+                    for res_line in $available_resolutions; do
+                        IFS=',' read -r res fps <<EOF
+$res_line
+EOF
                         if [ "$res" = "$current_resolution" ]; then
-                            echo "<option value=\"$res\" selected>$res</option>"
+                            echo "<option value=\"$res,$fps\" selected>$res (up to ${fps}fps)</option>"
                         else
-                            echo "<option value=\"$res\">$res</option>"
+                            echo "<option value=\"$res,$fps\">$res (up to ${fps}fps)</option>"
                         fi
                     done
                     %>
                 </select>
                 <div class="mt-2">
-                    Current: <span class="badge bg-info" id="currentResolution"><% echo "$current_resolution" %></span>
+                    Current: <span class="badge bg-info" id="currentResolution"><%= $current_resolution %></span>
                 </div>
             </div>
 
