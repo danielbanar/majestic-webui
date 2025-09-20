@@ -8,7 +8,7 @@ page_title="Camera runtime settings"
 get_available_resolutions() {
     sensor_data=$(cat /proc/mi_modules/mi_sensor/mi_sensor0 2>/dev/null)
     echo "$sensor_data" | awk '/start dump Pad info/,/End dump Pad info/ {
-        if (/^[[:space:]]+[0-9]+x[0-9]+@[0-9]+fps/) {
+        if (/^[[:space:]]+[0-9]+x[[0-9]+@[0-9]+fps/) {
             split($1, res, "@")
             split(res[2], fps, "fps")
             print res[1] "," fps[1]
@@ -73,10 +73,15 @@ EOF
             ;;
         restartmajestic)
             if killall -1 majestic; then
+                # After restart, get the new current resolution and FPS
+                current_resolution_fps=$(get_current_resolution)
+                IFS=',' read -r current_resolution current_fps <<EOF
+$current_resolution_fps
+EOF
                 echo "HTTP/1.1 200 OK"
                 echo "Content-type: text/plain"
                 echo ""
-                echo "Service restarted successfully"
+                echo "Service restarted successfully|$current_resolution|$current_fps"
                 exit
             else
                 echo "HTTP/1.1 500 Internal Server Error"
@@ -195,11 +200,8 @@ function updateControl(type, value) {
 }
 
 function setResolution(value) {
-    const resolutionElement = document.getElementById('currentResolution');
-    resolutionElement.classList.add('updating');
-    
-    // Parse the value to get resolution and max FPS
-    const [resolution, maxFps] = value.split(',');
+    const resolutionSelect = document.getElementById('resolutionSelect');
+    resolutionSelect.classList.add('updating');
     
     fetch(window.location.href, {
         method: 'POST',
@@ -208,21 +210,11 @@ function setResolution(value) {
     })
     .then(response => response.text())
     .then(res => {
-        resolutionElement.textContent = resolution;
-        resolutionElement.classList.remove('updating');
-        
-        // Update FPS slider to match the new resolution's max FPS
-        const fpsSlider = document.getElementById('fpsSlider');
-        fpsSlider.max = maxFps;
-        fpsSlider.value = maxFps;
-        document.getElementById('fpsValue').textContent = `${maxFps} FPS`;
-        
-        // Show the new max FPS in the info text
-        document.getElementById('fpsInfo').textContent = `Max FPS for this resolution: ${maxFps}`;
+        resolutionSelect.classList.remove('updating');
     })
     .catch(error => {
         console.error('Error:', error);
-        resolutionElement.classList.remove('updating');
+        resolutionSelect.classList.remove('updating');
     });
 }
 
@@ -240,7 +232,25 @@ function restartService() {
     })
     .then(response => response.text())
     .then(result => {
-        alert(result);
+        const [message, newResolution, newFps] = result.split('|');
+        
+        // Update FPS slider max value and current value
+        const fpsSlider = document.getElementById('fpsSlider');
+        fpsSlider.max = newFps;
+        fpsSlider.value = newFps;
+        document.getElementById('fpsValue').textContent = `${newFps} FPS`;
+        document.getElementById('fpsInfo').textContent = `Max FPS for this resolution: ${newFps}`;
+        
+        // Update the selected option in the dropdown
+        const resolutionSelect = document.getElementById('resolutionSelect');
+        for (let i = 0; i < resolutionSelect.options.length; i++) {
+            const option = resolutionSelect.options[i];
+            if (option.value.startsWith(newResolution + ',')) {
+                option.selected = true;
+                break;
+            }
+        }
+        
         button.classList.remove('loading');
         button.textContent = originalText;
     })
@@ -293,7 +303,7 @@ function restartService() {
             <!-- Sensor Modes Selector -->
             <div class="control-group">
                 <div class="sensor-mode-label">Sensor Modes:</div>
-                <select class="resolution-select" onchange="setResolution(this.value)">
+                <select class="resolution-select" id="resolutionSelect" onchange="setResolution(this.value)">
                     <%
                     # Generate options using shell code
                     IFS='
@@ -310,9 +320,6 @@ EOF
                     done
                     %>
                 </select>
-                <div class="mt-2">
-                    Current: <span class="badge bg-info" id="currentResolution"><%= $current_resolution %></span>
-                </div>
             </div>
 
             <!-- Restart Service Button -->
