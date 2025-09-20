@@ -4,6 +4,28 @@
 <%
 page_title="Camera runtime settings"
 
+# Function to parse available resolutions from sensor data
+get_available_resolutions() {
+    sensor_data=$(cat /proc/mi_modules/mi_sensor/mi_sensor0 2>/dev/null)
+    echo "$sensor_data" | awk '/start dump Pad info/,/End dump Pad info/ {
+        if (/^[[:space:]]+[0-9]+x[0-9]+@[0-9]+fps/) {
+            split($1, res, "@")
+            print res[1]
+        }
+    }'
+}
+
+# Function to parse current resolution from sensor data
+get_current_resolution() {
+    sensor_data=$(cat /proc/mi_modules/mi_sensor/mi_sensor0 2>/dev/null)
+    echo "$sensor_data" | awk '/start dump Pad info/,/End dump Pad info/ {
+        if (/^[[:space:]]+Cur/) {
+            split($2, res, "@")
+            print res[1]
+        }
+    }'
+}
+
 if [ "$REQUEST_METHOD" = "POST" ]; then
     case "$POST_action" in
         setfps)
@@ -27,7 +49,7 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
             fi
             ;;
         setresolution)
-            valid_resolutions="1920x1080 1280x720 854x480 1440x1080 960x720 640x480"
+            valid_resolutions=$(get_available_resolutions)
             if echo "$valid_resolutions" | grep -qw "$POST_resolution"; then
                 yaml-cli -s .video0.size "$POST_resolution"
                 echo "HTTP/1.1 200 OK"
@@ -37,7 +59,7 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
                 exit
             fi
             ;;
-        restartmjpeg)
+        restartmajestic)
             if killall -1 majestic; then
                 echo "HTTP/1.1 200 OK"
                 echo "Content-type: text/plain"
@@ -55,6 +77,10 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
     esac
     exit
 fi
+
+# Get current values for page render
+current_resolution=$(get_current_resolution)
+available_resolutions=$(get_available_resolutions)
 %>
 
 <%in p/header.cgi %>
@@ -124,9 +150,16 @@ function restartService() {
     fetch(window.location.href, {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'action=restartmjpeg'
+        body: 'action=restartmajestic'
     })
-    .catch(error => console.error('Error:', error));
+    .then(response => response.text())
+    .then(result => {
+        alert(result);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to restart service');
+    });
 }
 </script>
 
@@ -166,15 +199,21 @@ function restartService() {
             <div class="control-group">
                 <label class="form-label">Video Resolution:</label>
                 <select class="resolution-select" onchange="setResolution(this.value)">
-                    <option value="1920x1080">1920x1080 16:9</option>
-                    <option value="1280x720">1280x720 16:9</option>
-                    <option value="854x480">854x480 16:9</option>
-                    <option value="1440x1080">1440x1080 4:3</option>
-                    <option value="960x720">960x720 4:3</option>
-                    <option value="640x480">640x480 4:3</option>
+                    <%
+                    # Generate options using shell code
+                    IFS='
+                    '
+                    for res in $available_resolutions; do
+                        if [ "$res" = "$current_resolution" ]; then
+                            echo "<option value=\"$res\" selected>$res</option>"
+                        else
+                            echo "<option value=\"$res\">$res</option>"
+                        fi
+                    done
+                    %>
                 </select>
                 <div class="mt-2">
-                    Current: <span class="badge bg-info" id="currentResolution">-</span>
+                    Current: <span class="badge bg-info" id="currentResolution"><% echo "$current_resolution" %></span>
                 </div>
             </div>
 
