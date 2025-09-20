@@ -114,10 +114,36 @@ input[type="range"], select {
 .button_submit:hover {
     background-color: #c82333;
 }
+.loading {
+    opacity: 0.7;
+    pointer-events: none;
+}
+.badge.updating {
+    background-color: #6c757d !important;
+}
 </style>
 
 <script>
+// Debounce function to limit how often a function can be called
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Update control with debouncing (for cases where you might want intermediate updates)
+const debouncedUpdateControl = debounce(updateControl, 500);
+
 function updateControl(type, value) {
+    const valueElement = document.getElementById(`${type}Value`);
+    valueElement.classList.add('updating');
+    
     fetch(window.location.href, {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -125,15 +151,19 @@ function updateControl(type, value) {
     })
     .then(response => response.text())
     .then(newValue => {
-        const element = document.getElementById(`${type}Value`);
-        if (element) {
-            element.textContent = `${newValue}${type === 'fps' ? ' FPS' : ' kbps'}`;
-        }
+        valueElement.textContent = `${newValue}${type === 'fps' ? ' FPS' : ' kbps'}`;
+        valueElement.classList.remove('updating');
     })
-    .catch(error => console.error('Error:', error));
+    .catch(error => {
+        console.error('Error:', error);
+        valueElement.classList.remove('updating');
+    });
 }
 
 function setResolution(value) {
+    const resolutionElement = document.getElementById('currentResolution');
+    resolutionElement.classList.add('updating');
+    
     fetch(window.location.href, {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -141,12 +171,22 @@ function setResolution(value) {
     })
     .then(response => response.text())
     .then(res => {
-        document.getElementById('currentResolution').textContent = res;
+        resolutionElement.textContent = res;
+        resolutionElement.classList.remove('updating');
     })
-    .catch(error => console.error('Error:', error));
+    .catch(error => {
+        console.error('Error:', error);
+        resolutionElement.classList.remove('updating');
+    });
 }
 
 function restartService() {
+    const button = document.querySelector('.button_submit');
+    const originalText = button.textContent;
+    
+    button.classList.add('loading');
+    button.textContent = 'Restarting...';
+    
     fetch(window.location.href, {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -155,10 +195,14 @@ function restartService() {
     .then(response => response.text())
     .then(result => {
         alert(result);
+        button.classList.remove('loading');
+        button.textContent = originalText;
     })
     .catch(error => {
         console.error('Error:', error);
         alert('Failed to restart service');
+        button.classList.remove('loading');
+        button.textContent = originalText;
     });
 }
 </script>
@@ -175,7 +219,8 @@ function restartService() {
                            min="10" 
                            max="60" 
                            value="30"
-                           oninput="updateControl('fps', this.value)">
+                           onchange="updateControl('fps', this.value)"
+                           oninput="document.getElementById('fpsValue').textContent = this.value + ' FPS'">
                     <span class="badge bg-primary fs-5" id="fpsValue">30 FPS</span>
                 </div>
             </div>
@@ -190,7 +235,8 @@ function restartService() {
                            max="8192" 
                            step="256"
                            value="0"
-                           oninput="updateControl('bitrate', this.value)">
+                           onchange="updateControl('bitrate', this.value)"
+                           oninput="document.getElementById('bitrateValue').textContent = this.value + ' kbps'">
                     <span class="badge bg-success fs-5" id="bitrateValue">0 kbps</span>
                 </div>
             </div>
