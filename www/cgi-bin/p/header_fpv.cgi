@@ -66,6 +66,7 @@ Pragma: no-cache
 					<li class="nav-item dropdown">
 						<a aria-expanded="false" class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" id="dropdownTools" role="button">Tools</a>
 						<ul aria-labelledby="dropdownTools" class="dropdown-menu">
+							<li><a class="dropdown-item" href="tool-runtime-settings.cgi">Camera runtime settings</a></li>
 							<li><a class="dropdown-item" href="tool-console.cgi">Console</a></li>
 							<li><a class="dropdown-item" href="tool-files.cgi">Files</a></li>
 							<% if [ -e /dev/mmcblk0 ]; then %>
