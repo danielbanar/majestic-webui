@@ -151,6 +151,10 @@ input[type="range"], select {
     color: #6c757d;
     margin-top: 5px;
 }
+.sensor-mode-label {
+    font-weight: bold;
+    margin-bottom: 8px;
+}
 </style>
 
 <script>
@@ -286,9 +290,9 @@ function restartService() {
                 </div>
             </div>
 
-            <!-- Resolution Selector -->
+            <!-- Sensor Modes Selector -->
             <div class="control-group">
-                <label class="form-label">Sensor Mode:</label>
+                <div class="sensor-mode-label">Sensor Modes:</div>
                 <select class="resolution-select" onchange="setResolution(this.value)">
                     <%
                     # Generate options using shell code
@@ -299,9 +303,9 @@ function restartService() {
 $res_line
 EOF
                         if [ "$res" = "$current_resolution" ]; then
-                            echo "<option value=\"$res,$fps\" selected>$res (up to ${fps}fps)</option>"
+                            echo "<option value=\"$res,$fps\" selected>$res@${fps}fps</option>"
                         else
-                            echo "<option value=\"$res,$fps\">$res (up to ${fps}fps)</option>"
+                            echo "<option value=\"$res,$fps\">$res@${fps}fps</option>"
                         fi
                     done
                     %>
